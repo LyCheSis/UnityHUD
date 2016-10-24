@@ -1,25 +1,60 @@
 ﻿using UnityEngine;
+using UnityEngine.UI;
 using System.Collections;
 
 public class UnityHUD : MonoBehaviour
 {
-    public bool showMouse = true;
-    public bool showDebug = true;
-    public bool showHelp = true;
+    [Tooltip("UI Text element to display messages on. Leave empty to use GUI")]
+    public Text debugText;
 
+    [Tooltip("Application version. If left empty the mobile version number is used.")]
+    public string version = "";
+
+    [Tooltip("Show/Hide mouse pointer")]
+    public bool showMouse = true;
+
+    [Tooltip("Show/Hide debug information")]
+    public bool showDebug = true;
+
+    private bool showHelp = false;
+
+    [Tooltip("Show/Hide system information")]
+    public bool showSystemInfo = true;
+
+    [Tooltip("Show/Hide application information")]
+    public bool showApplicationInfo = true;
+
+    [Tooltip("Show help as introduction after start")]
+    public bool intro = true;
+
+    [Tooltip("Duration for which to show introduction")]
+    public float introDuration = 4F;
+
+    [Tooltip("Duration for which to show messages")]
+    public float messageDuration = 4F;
+
+    [Tooltip("Scale of screen shot")]
     public int screenshotScale = 1;
 
+    [Tooltip("Multiplier while in fast forward mode")]
     public float fastForwardMultiplier = 8F;
     static bool fastForwardActive = false;
     static float timeScaleBackup = 1F;
 
+    [Tooltip("Width of help overlay")]
+    public int helpWidth = 320;
+
     GUIStyle style;
     static string text = "";
+    static string help = "RShift+H: Show Help\nRShift+D: Show Debug Information\nRShift+F: Toggle Fast Forward\nRShift+S: Save Screenshot\n";
+    static string message = "";
     static string status = "";
-    static string systemInfo = "";
-    static string applicationInfo = "";
-    static string fps = "";
-    static int counter = 0;
+    static string outputSystem = "";
+    static string outputApplication = "";
+    static string outputScreen = "";
+    static string outputFps = "";
+    static string output = "";
+    static int frameCounter = 0;
     static float timeout = 0F;
 
 
@@ -43,12 +78,17 @@ public class UnityHUD : MonoBehaviour
         style.wordWrap = true;
         style.padding = new RectOffset(4, 4, 4, 4);
 
-        systemInfo = SystemInfo.deviceName + " (" + ((float)SystemInfo.systemMemorySize / 1024F).ToString("0") + "GB) - " + SystemInfo.graphicsDeviceName + " (" + ((float)SystemInfo.graphicsMemorySize / 1024F).ToString("0") + "GB)";
-        applicationInfo = Application.productName + " v" + Application.version + " by " + Application.companyName;
+        outputSystem =
+            SystemInfo.deviceName + " (" + ((float)SystemInfo.systemMemorySize / 1024F).ToString("0") + "GB) - " +
+            SystemInfo.graphicsDeviceName + " (" + ((float)SystemInfo.graphicsMemorySize / 1024F).ToString("0") + "GB)"; //  + " " + Screen.dpi + "dpi " + Screen.orientation;
+
+        outputApplication = Application.productName + " " + (version != "" ? version : "v" + Application.version) + " by " + Application.companyName;
 
         Debug.Log(Application.persistentDataPath);
 
-        SetCursorVisibility(showMouse);
+        SetCursor(showMouse);
+
+        StartCoroutine(AutoHide());
     }
 
 
@@ -60,6 +100,13 @@ public class UnityHUD : MonoBehaviour
 
 
 
+    public static void Help(string _text)
+    {
+        help += help;
+    }
+
+
+
     void Update()
     {
         if (showDebug)
@@ -67,14 +114,15 @@ public class UnityHUD : MonoBehaviour
             if (timeout > 0F)
             {
                 timeout -= Time.deltaTime;
-                counter++;
+                frameCounter++;
             }
 
             if (timeout <= 0F)
             {
-                fps = " - " + counter.ToString() + "fps (" + (Time.deltaTime * 1000).ToString("0.0") + "ms)";
+                outputFps = frameCounter.ToString() + "fps (" + (Time.deltaTime * 1000).ToString("0.0") + "ms)";
+                outputScreen = Screen.width + "x" + Screen.height;
                 timeout = 1F;
-                counter = 0;
+                frameCounter = 0;
             }
         }
 
@@ -87,21 +135,49 @@ public class UnityHUD : MonoBehaviour
                 ToggleFastForward();
 
             if (Input.GetKeyDown(KeyCode.M))
-                ToggleCursorVisibility();
+                ToggleCursor();
 
             if (Input.GetKeyDown(KeyCode.D))
             {
-                ToggleDebugVisibility();
+                if (showHelp)
+                {
+                    showHelp = false;
+                    showDebug = true;
+                }
+                else
+                {
+                    ToggleDebug();
+                }
             }
 
             if (Input.GetKeyDown(KeyCode.H))
-                ToggleHelpVisibility();
+                ToggleHelp();
         }
 
         if (fastForwardActive)
             status += " FF" + fastForwardMultiplier + "x";
 
         StartCoroutine(ClearStrings());
+    }
+
+
+
+    void LateUpdate()
+    {
+        if (debugText != null)
+        {
+            output = "";
+
+            if (showApplicationInfo)
+                output += outputApplication + " - ";
+
+            if (showSystemInfo)
+                output += outputSystem + " - ";
+
+            output += outputScreen + " - " + outputFps + status + "\n" + text;
+
+            debugText.text = output;
+        }
     }
 
 
@@ -153,46 +229,72 @@ public class UnityHUD : MonoBehaviour
 
 
 
-    void ToggleCursorVisibility()
+    public void ToggleCursor()
     {
         UnityEngine.Cursor.visible = !UnityEngine.Cursor.visible;
     }
 
 
-    void SetCursorVisibility(bool _visibility)
+    public void SetCursor(bool _visibility)
     {
         UnityEngine.Cursor.visible = _visibility;
     }
 
 
 
-    void ToggleDebugVisibility()
+    public void ToggleDebug()
     {
         showDebug = !showDebug;
     }
 
 
 
-    void ToggleHelpVisibility()
+    public void ToggleHelp()
     {
         showHelp = !showHelp;
     }
 
 
 
+    IEnumerator AutoHide()
+    {
+        yield return new WaitForSeconds(introDuration);
+
+        intro = false;
+    }
+
+
+
     void OnGUI()
     {
-        if (!showDebug)
-            return;
+        GUIContent content;
+        int width;
+        int height;
 
-        GUIContent content = new GUIContent((applicationInfo + " - " + systemInfo + fps + status + "\n" + text).Trim());
 
-        int width = Screen.width;
-        int height = 256;
+        if (showHelp || intro)
+        {
+            content = new GUIContent(("<b>" + outputApplication + "</b>" + status + "\n\n" + help).Trim());
 
-        style.alignment = TextAnchor.UpperLeft;
-        height = Mathf.RoundToInt(style.CalcHeight(content, (float)width));
+            width = helpWidth;
+            height = 256;
 
-        GUI.Box(new Rect(0, 0, width, height), content, style);
+            style.alignment = TextAnchor.UpperLeft;
+            height = Mathf.RoundToInt(style.CalcHeight(content, (float)width));
+
+            GUI.Box(new Rect(Screen.width / 2 - helpWidth / 2, (Screen.height / 2 - height / 2) / 2, width, height), content, style);
+        }
+        else if (showDebug)
+        {
+            content = new GUIContent(("<b>" + outputApplication + "</b> " + outputSystem + " - " + outputScreen + " - " + outputFps + status + "\n" + text).Trim());
+
+            width = Screen.width;
+            height = 256;
+
+            style.alignment = TextAnchor.UpperLeft;
+            height = Mathf.RoundToInt(style.CalcHeight(content, (float)width));
+
+            GUI.Box(new Rect(0, 0, width, height), content, style);
+        }
     }
 }
