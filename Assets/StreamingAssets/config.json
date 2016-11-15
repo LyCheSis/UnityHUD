@@ -1,0 +1,6 @@
+{
+	"data": [
+		{ "key": "demo_title", "value": "UnityHUD Demo" },
+		{ "key": "rotator_rotation", "value": "1.1, 2.2, 3.3" }
+	]
+}

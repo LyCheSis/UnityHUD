@@ -7,10 +7,17 @@ public class Rotator : MonoBehaviour
     
 
 
+    void Start()
+    {
+        UnityHUD.Help("Rotator has no hotkeys.");
+
+        rotation = UnityHUD.GetConfigVector3("rotator_rotation");
+    }
+
 	void Update()
     {
         transform.Rotate(rotation * Time.deltaTime);
 
-        UnityHUD.Log("Rotator " + transform.rotation.ToString("F3") + "\n");
+        UnityHUD.Debug("Rotator " + transform.rotation.ToString("F3") + "\n");
 	}
 }
