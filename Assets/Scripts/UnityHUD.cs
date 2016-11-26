@@ -3,9 +3,13 @@ using UnityEngine.UI;
 using System.IO;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 public class UnityHUD : MonoBehaviour
 {
+    public delegate void ConfigLoaded();
+    public static event ConfigLoaded OnConfigLoaded;
+
     public class HelpEntry
     {
         public string hotkey;
@@ -31,7 +35,15 @@ public class UnityHUD : MonoBehaviour
         public string value;
     }
 
-
+    [System.Serializable]
+    public class ConfigSource
+    {
+        public string name;
+        public string prefix;
+        public string remoteFile;
+        public string localFile;
+        public bool loaded;
+    }
 
     [Tooltip("UI Text element to display messages on. Leave empty to use GUI")]
     public Text debugText;
@@ -40,7 +52,7 @@ public class UnityHUD : MonoBehaviour
     public string version = "";
 
     [Tooltip("JSON file with configuration data.")]
-    public string configFile = "config.json";
+    public ConfigSource[] configFiles;
 
     [Tooltip("Toggle log")]
     public bool enableLog = true;
@@ -103,17 +115,15 @@ public class UnityHUD : MonoBehaviour
     static bool configLoaded = false;
     static Dictionary<string, string> config;
 
+    static float noticeTimeout = 0F;
+    static string noticeText = "";
+
 
 
     void Awake()
     {
         log = enableLog;
         debug = showDebug;
-
-
-
-        config = new Dictionary<string, string>();
-        LoadConfig(configFile);
 
 
 
@@ -150,6 +160,16 @@ public class UnityHUD : MonoBehaviour
 
     void Start()
     {
+        // load config here to allow other scripts to subscribe to OnConfigLoaded events via the OnEnable function
+        config = new Dictionary<string, string>();
+
+        for (int i = 0; i < configFiles.Length; i++)
+        {
+            configFiles[i].loaded = LoadConfig(configFiles[i].localFile, configFiles[i].prefix);
+        }
+
+
+
         outputSystem =
             SystemInfo.deviceName + " (" + ((float)SystemInfo.systemMemorySize / 1024F).ToString("0") + "GB) - " +
             SystemInfo.graphicsDeviceName + " (" + ((float)SystemInfo.graphicsMemorySize / 1024F).ToString("0") + "GB)"; //  + " " + Screen.dpi + "dpi " + Screen.orientation;
@@ -158,7 +178,14 @@ public class UnityHUD : MonoBehaviour
 
         UnityEngine.Debug.Log(Application.persistentDataPath);
 
-        SetCursor(showMouse);
+
+
+        // hidden mouse pointer in the editor is pretty annoying so don't do it.
+        #if !UNITY_EDITOR
+            SetCursor(showMouse);
+        #endif
+
+
 
         StartCoroutine(AutoHide());
     }
@@ -186,27 +213,20 @@ public class UnityHUD : MonoBehaviour
 
 
 
+    public static void Notice(string _description)
+    {
+        noticeText += _description + "\n";
+        noticeTimeout = 4F;
+    }
+
+
+
     void Update()
     {
         log = enableLog;
         debug = showDebug;
 
-        if (showDebug)
-        {
-            if (timeout > 0F)
-            {
-                timeout -= Time.deltaTime;
-                frameCounter++;
-            }
 
-            if (timeout <= 0F)
-            {
-                outputFps = frameCounter.ToString() + "fps (" + (Time.deltaTime * 1000).ToString("0.0") + "ms)";
-                outputScreen = Screen.width + "x" + Screen.height;
-                timeout = 1F;
-                frameCounter = 0;
-            }
-        }
 
         if (Input.GetKey(KeyCode.RightShift))
         {
@@ -218,6 +238,9 @@ public class UnityHUD : MonoBehaviour
 
             if (Input.GetKeyDown(KeyCode.M))
                 ToggleCursor();
+
+            if (Input.GetKeyDown(KeyCode.N))
+                Notice("Test notice!");
 
             if (Input.GetKeyDown(KeyCode.D))
             {
@@ -236,8 +259,29 @@ public class UnityHUD : MonoBehaviour
                 ToggleHelp();
         }
 
-        if (fastForwardActive)
-            status += " FF" + fastForwardMultiplier + "x";
+
+
+        if (showDebug)
+        {
+            if (timeout > 0F)
+            {
+                timeout -= Time.deltaTime;
+                frameCounter++;
+            }
+
+            if (timeout <= 0F)
+            {
+                outputFps = frameCounter.ToString() + "fps (" + (Time.deltaTime * 1000).ToString("0.0") + "ms)";
+                outputScreen = Screen.width + "x" + Screen.height;
+                timeout = 1F;
+                frameCounter = 0;
+            }
+
+            if (fastForwardActive)
+                status += " FF" + fastForwardMultiplier + "x";
+        }
+
+
 
         StartCoroutine(ClearStrings());
     }
@@ -349,82 +393,145 @@ public class UnityHUD : MonoBehaviour
 
     void OnGUI()
     {
+        Rect rect;
         GUIContent content;
         int width;
         int hotkeyWidth;
-        int descriptionWidth;
 
         int height;
 
-        if (showHelp || intro)
-        {
-            width = helpWidth;
-            height = Screen.height - 32; // helpEntries.Count * (styleFontSize * 2 + 1);
-            hotkeyWidth = width / 3;
+        GUI.skin.label = style;
+        GUI.skin.window = style;
 
-            //            ("<b>" + outputApplication + "</b>" + status + "\n\n" + help).Trim()
-
-            style.alignment = TextAnchor.UpperLeft;
-
-            GUILayout.BeginArea(new Rect(Screen.width / 2 - width / 2, 16, width, height), style);
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label(outputApplication + " " + status, style);
-            GUILayout.EndHorizontal();
-
-            for (int i = 0; i < helpEntries.Count; i++)
-            {
-                GUILayout.BeginHorizontal();
-
-                if (helpEntries[i].hotkey != "")
-                    GUILayout.Label(helpEntries[i].hotkey, style, GUILayout.Width(hotkeyWidth));
-
-                GUILayout.Label(helpEntries[i].description, style);
-                GUILayout.EndHorizontal();
-            }
-
-            GUILayout.EndArea();
-        }
-        else if (showDebug)
+        if (showDebug)
         {
             content = new GUIContent(("<b>" + outputApplication + "</b> " + outputSystem + " - " + outputScreen + " - " + outputFps + status + "\n" + text).Trim());
 
             width = Screen.width;
-            height = 256;
-
-            style.alignment = TextAnchor.UpperLeft;
             height = Mathf.RoundToInt(style.CalcHeight(content, (float)width));
 
-            GUI.Box(new Rect(0, 0, width, height), content, style);
+            rect = new Rect(0, 0, width, height);
+            GUI.Box(rect, content, style);
+        }
+
+        if (showHelp || intro)
+        {
+            width = helpWidth;
+            height = 0;
+
+            hotkeyWidth = width / 3;
+
+            rect = new Rect(Screen.width / 2 - width / 2, 16, width, height);
+            rect = GUILayout.Window(0, rect, HelpWindow, "", GUILayout.Width(width));
+        }
+
+        if (noticeTimeout > 0F)
+        {
+            content = new GUIContent((noticeText).Trim());
+
+            width = helpWidth;
+            height = 0;
+
+            noticeTimeout -= Time.deltaTime;
+            if (noticeTimeout <= 0F)
+            {
+                noticeTimeout = 0F;
+                noticeText = "";
+            }
+
+            width = helpWidth;
+            height = Mathf.RoundToInt(style.CalcHeight(content, (float)width));
+
+            rect = new Rect(Screen.width / 2 - width / 2, Screen.height / 2 - height / 2, width, height);
+            GUI.Box(rect, content, style);
         }
     }
 
-    static void LoadConfig(string _file)
+
+
+    void HelpWindow(int _windowId)
+    {
+        GUILayout.BeginHorizontal();
+        GUILayout.Label(outputApplication + " " + status);
+        GUILayout.EndHorizontal();
+
+        for (int i = 0; i < helpEntries.Count; i++)
+        {
+            GUILayout.BeginHorizontal();
+
+            if (helpEntries[i].hotkey != "")
+                GUILayout.Label(helpEntries[i].hotkey); // , style, GUILayout.Width(160));
+
+            GUILayout.Label(helpEntries[i].description);
+            GUILayout.EndHorizontal();
+        }
+    }
+
+
+
+    static bool LoadConfg(string _file)
+    {
+        return LoadConfig(_file, "");
+    }
+
+
+
+    static bool LoadConfig(string _file, string _prefix)
     {
         // ok, as long as Unity's JsonUtility cannot serialize dictionaries
         // we have to go the long route and rebuild the key/value pair
         // making config files rather ugly.
 
-        string file = System.IO.Path.Combine(Application.streamingAssetsPath, _file);
-
-        if (File.Exists(file))
+        if (_file.Substring(0, 4) == "http")
         {
-            UnityEngine.Debug.Log("loading config file \"" + file + "\"");
-
-            string json = File.ReadAllText(file);
-
-            ConfigData configData = JsonUtility.FromJson<ConfigData>(json);
-
-            for (int i = 0; i < configData.data.Length; i++)
-            {
-                config.Add(configData.data[i].key, configData.data[i].value);
-            }
-
-            configLoaded = true;
+            
         }
         else
         {
-            UnityEngine.Debug.LogWarning("config file \"" + file + "\" not found");
+            string file = System.IO.Path.Combine(Application.streamingAssetsPath, _file);
+
+            if (File.Exists(file))
+            {
+                UnityEngine.Debug.Log("loading config file \"" + file + "\"");
+
+                string json = File.ReadAllText(file);
+
+                ConfigData configData = JsonUtility.FromJson<ConfigData>(json);
+
+                for (int i = 0; i < configData.data.Length; i++)
+                {
+                    config.Add(_prefix + configData.data[i].key, configData.data[i].value);
+                }
+
+                if (OnConfigLoaded != null)
+                    OnConfigLoaded();
+
+                return true;
+            }
+            else
+            {
+                UnityEngine.Debug.LogWarning("config file \"" + file + "\" not found");
+            }
+        }
+
+        return false;
+    }
+
+
+
+    public static IEnumerator LoadWebConfig(string _url, string _prefix)
+    {
+        UnityEngine.Debug.Log("loading config file \"" + _url + "\"");
+
+        WWW www = new WWW(_url);
+
+        yield return www;
+
+        ConfigData configData = JsonUtility.FromJson<ConfigData>(www.text);
+
+        for (int i = 0; i < configData.data.Length; i++)
+        {
+            config.Add(_prefix + configData.data[i].key, configData.data[i].value);
         }
     }
 
@@ -432,11 +539,22 @@ public class UnityHUD : MonoBehaviour
 
     public static string GetConfigString(string _key)
     {
-        return GetConfigString(_key, "");
+        if (config == null)
+            return null;
+
+        if (config.ContainsKey(_key))
+            return config[_key];
+        else
+            return null;
     }
 
+
+
     public static string GetConfigString(string _key, string _default)
-    { 
+    {
+        if (config == null)
+            return null;
+
         if (config.ContainsKey(_key))
             return config[_key];
         else
@@ -465,6 +583,8 @@ public class UnityHUD : MonoBehaviour
         return GetConfigInt(_key, 0);
     }
 
+
+
     public static int GetConfigInt(string _key, int _default)
     {
         if (config.ContainsKey(_key))
@@ -479,6 +599,8 @@ public class UnityHUD : MonoBehaviour
     {
         return GetConfigVector3(_key, Vector3.zero);
     }
+
+
 
     public static Vector3 GetConfigVector3(string _key, Vector3 _default)
     {
