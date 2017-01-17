@@ -4,6 +4,7 @@ using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net;
 
 public class UnityHUD : MonoBehaviour
 {
@@ -44,6 +45,17 @@ public class UnityHUD : MonoBehaviour
         public string localFile;
         public bool loaded;
     }
+
+    [System.Serializable]
+    public class Resolution
+    {
+        public string name;
+//        public bool force;    reserved for future use
+        public Vector2 size;
+        public bool windowed;
+        public int refreshRate;
+    }
+
 
     [Tooltip("UI Text element to display messages on. Leave empty to use GUI")]
     public Text debugText;
@@ -86,6 +98,7 @@ public class UnityHUD : MonoBehaviour
     [Tooltip("Multiplier while in fast forward mode")]
     public float fastForwardMultiplier = 8F;
     static bool fastForwardActive = false;
+    static bool pauseActive = false;
     static float timeScaleBackup = 1F;
 
     [Tooltip("Width of help overlay")]
@@ -98,11 +111,15 @@ public class UnityHUD : MonoBehaviour
     public static bool log;
     public static bool debug;
 
+    public Resolution[] resolutions;
+    public int currentResolution = 0;
+
     static List<HelpEntry> helpEntries;
 
     static string text = "";
     static string help = "";
     static string message = "";
+//    static string log = "";
     static string status = "";
     static string outputSystem = "";
     static string outputApplication = "";
@@ -153,7 +170,11 @@ public class UnityHUD : MonoBehaviour
         Help("RShift + H", "Toggle Help");
         Help("RShift + D", "Show Debug Information");
         Help("RShift + F", "Toggle Fast Forward");
+        Help("RShift + P", "Toggle Pause");
         Help("RShift + S", "Save Screenshot");
+        Help("RShift + R", "Switch Resolution");
+        Help("RShift + Plus", "Increase Quality");
+        Help("RShift + Minus", "Decrease Quality");
     }
 
 
@@ -169,16 +190,14 @@ public class UnityHUD : MonoBehaviour
         }
 
 
+        outputSystem = SystemInfo.deviceName + " " + string.Join("/", GetHostAddresses());
 
-        outputSystem =
-            SystemInfo.deviceName + " (" + ((float)SystemInfo.systemMemorySize / 1024F).ToString("0") + "GB) - " +
+        outputSystem += " (" + ((float)SystemInfo.systemMemorySize / 1024F).ToString("0") + "GB) - " +
             SystemInfo.graphicsDeviceName + " (" + ((float)SystemInfo.graphicsMemorySize / 1024F).ToString("0") + "GB)"; //  + " " + Screen.dpi + "dpi " + Screen.orientation;
 
         outputApplication = Application.productName + " " + (version != "" ? version : "v" + Application.version) + " by " + Application.companyName;
 
         UnityEngine.Debug.Log(Application.persistentDataPath);
-
-
 
         // hidden mouse pointer in the editor is pretty annoying so don't do it.
         #if !UNITY_EDITOR
@@ -236,6 +255,9 @@ public class UnityHUD : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.F))
                 ToggleFastForward();
 
+            if (Input.GetKeyDown(KeyCode.P))
+                TogglePause();
+
             if (Input.GetKeyDown(KeyCode.M))
                 ToggleCursor();
 
@@ -257,6 +279,34 @@ public class UnityHUD : MonoBehaviour
 
             if (Input.GetKeyDown(KeyCode.H))
                 ToggleHelp();
+
+            if (Input.GetKeyDown(KeyCode.R))
+            {
+                if (resolutions.Length > 0)
+                {
+                    currentResolution++;
+
+                    if (currentResolution >= resolutions.Length)
+                        currentResolution = 0;
+
+                    Screen.SetResolution(
+                        Mathf.RoundToInt(resolutions[currentResolution].size.x),
+                        Mathf.RoundToInt(resolutions[currentResolution].size.y),
+                        resolutions[currentResolution].windowed,
+                        resolutions[currentResolution].refreshRate
+                    );
+                }
+            }
+
+            if (Input.GetKeyDown(KeyCode.Plus))
+            {
+                QualitySettings.IncreaseLevel(true);
+            }
+
+            if (Input.GetKeyDown(KeyCode.Minus))
+            {
+                QualitySettings.DecreaseLevel(true);
+            }
         }
 
 
@@ -277,8 +327,13 @@ public class UnityHUD : MonoBehaviour
                 frameCounter = 0;
             }
 
+            status += " Q:" + QualitySettings.GetQualityLevel();
+
             if (fastForwardActive)
-                status += " FF" + fastForwardMultiplier + "x";
+                status += " FF:" + fastForwardMultiplier + "x";
+
+            if (pauseActive)
+                status += " P";
         }
 
 
@@ -320,16 +375,7 @@ public class UnityHUD : MonoBehaviour
 
     void MakeScreenshot()
     {
-        System.DateTime now = System.DateTime.Now;
-
-        /*
-        string uri = System.IO.Path.Combine(
-            Application.dataPath,
-            Application.productName + "_" + now.Year + now.Month + now.Day + "_" + now.Hour + now.Minute + now.Second + ".png"
-        );
-        */
-
-        string uri = Application.productName + "_" + now.Year + now.Month + now.Day + "_" + now.Hour + now.Minute + now.Second + ".png";
+        string uri = Application.productName + "_" + System.DateTime.Now.ToString("yyyyMMdd-hhmmss") + ".png";
 
         UnityEngine.Debug.Log("Saving screenshot \"" + uri + "\"");
 
@@ -338,17 +384,53 @@ public class UnityHUD : MonoBehaviour
 
 
 
+    public static void MakeScreenshot(int _screenshotScale)
+    {
+        string uri = Application.productName + "_" + System.DateTime.Now.ToString("yyyyMMdd-hhmmss") + ".png";
+
+        UnityEngine.Debug.Log("Saving screenshot \"" + uri + "\"");
+
+        Application.CaptureScreenshot(uri, _screenshotScale);
+    }
+
+
+
     void ToggleFastForward()
     {
         if (!fastForwardActive)
         {
-            timeScaleBackup = Time.timeScale;
+            if (!pauseActive)
+                timeScaleBackup = Time.timeScale;
+
             Time.timeScale = fastForwardMultiplier;
             fastForwardActive = true;
+            pauseActive = false;
         }
         else
         {
             Time.timeScale = timeScaleBackup;
+            fastForwardActive = false;
+            pauseActive = false;
+        }
+    }
+
+
+
+    void TogglePause()
+    {
+        if (!pauseActive)
+        {
+            if (!fastForwardActive)
+                timeScaleBackup = Time.timeScale;
+
+            Time.timeScale = 0F;
+            pauseActive = true;
+            fastForwardActive = false;
+        }
+        else
+        {
+            Time.timeScale = timeScaleBackup;
+            pauseActive = false;
             fastForwardActive = false;
         }
     }
@@ -613,6 +695,45 @@ public class UnityHUD : MonoBehaviour
         else
         {
             return _default;
+        }
+    }
+
+
+
+    public static string[] GetHostAddresses()
+    {
+        try
+        {
+            string hostName = Dns.GetHostName();
+
+            outputSystem = hostName;
+
+            IPAddress[] hostAddresses = Dns.GetHostAddresses(hostName);
+
+            List<string> addresses = new List<string>();
+
+            if (hostAddresses.Length > 0)
+            {
+                for (int i = 0; i < hostAddresses.Length; i++)
+                {
+                    switch (hostAddresses[i].AddressFamily)
+                    {
+                        case System.Net.Sockets.AddressFamily.InterNetwork:
+                            addresses.Add(hostAddresses[i].ToString());
+                            break;
+                    }
+                }
+            }
+
+            return addresses.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            return new string[0];
+
+//            Console.WriteLine("Exception caught!!!");
+//            Console.WriteLine("Source : " + e.Source);
+//            Console.WriteLine("Message : " + e.Message);
         }
     }
 }
