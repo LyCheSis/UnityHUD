@@ -173,8 +173,8 @@ public class UnityHUD : MonoBehaviour
         Help("RShift + P", "Toggle Pause");
         Help("RShift + S", "Save Screenshot");
         Help("RShift + R", "Switch Resolution");
-        Help("RShift + Plus", "Increase Quality");
-        Help("RShift + Minus", "Decrease Quality");
+        Help("RShift + ,", "Decrease Quality");
+        Help("RShift + .", "Increase Quality");
     }
 
 
@@ -298,12 +298,12 @@ public class UnityHUD : MonoBehaviour
                 }
             }
 
-            if (Input.GetKeyDown(KeyCode.Plus))
+            if (Input.GetKeyDown(KeyCode.Period))
             {
                 QualitySettings.IncreaseLevel(true);
             }
 
-            if (Input.GetKeyDown(KeyCode.Minus))
+            if (Input.GetKeyDown(KeyCode.Comma))
             {
                 QualitySettings.DecreaseLevel(true);
             }
@@ -321,7 +321,7 @@ public class UnityHUD : MonoBehaviour
 
             if (timeout <= 0F)
             {
-                outputFps = frameCounter.ToString() + "fps (" + (Time.deltaTime * 1000).ToString("0.0") + "ms)";
+                outputFps = "<color=" + (frameCounter < Screen.currentResolution.refreshRate ? "#AA0000" : "#00AA00") + ">" + frameCounter.ToString() + "fps (" + (Time.deltaTime * 1000).ToString("0.0") + "ms)</color>";
                 outputScreen = Screen.width + "x" + Screen.height;
                 timeout = 1F;
                 frameCounter = 0;
